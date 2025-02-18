@@ -1,9 +1,11 @@
 # Villa del Sol - Sistema de Administración
 
 ## 📋 Descripción del Proyecto
+
 Sistema de gestión administrativa para el conjunto residencial "Villa del Sol", diseñado para optimizar y centralizar los procesos de administración, control de acceso y gestión de pagos.
 
 ## 🎯 Objetivos
+
 - Optimizar la gestión administrativa del conjunto residencial
 - Mejorar el control de acceso de visitantes
 - Facilitar el seguimiento de pagos de cuotas de administración
@@ -12,6 +14,7 @@ Sistema de gestión administrativa para el conjunto residencial "Villa del Sol",
 ## 🚀 Funcionalidades Principales
 
 ### Must Have
+
 - Sistema de autenticación y autorización
 - Registro y gestión de propietarios
 - Gestión de apartamentos
@@ -20,32 +23,37 @@ Sistema de gestión administrativa para el conjunto residencial "Villa del Sol",
 - Generación de reportes básicos
 
 ### Should Have
+
 - Interfaz personalizable
 - Filtros avanzados en reportes
 
 ### Could Have
+
 - Sistema de notificaciones por correo
 - Registro de comentarios en visitas
 
 ## 🛠 Tecnologías Utilizadas
 
 ### Backend
+
 - Node.js
 - Express
 - ORM (por definir)
 - JWT para autenticación
 
 ### Frontend
+
 - Next.js
 - React
 - Tailwind CSS
 
 ### Base de Datos
+
 - (Por definir: MySQL/PostgreSQL)
 
 ## 📁 Estructura del Proyecto
 
-```
+```dir
 villa-del-sol/
 ├── backend/
 │   ├── src/
@@ -69,6 +77,7 @@ villa-del-sol/
 ```
 
 ## 🔧 Requisitos del Sistema
+
 - Node.js v18 o superior
 - NPM v9 o superior
 - Base de datos (por definir)
@@ -76,6 +85,7 @@ villa-del-sol/
 ## 🚀 Instalación y Configuración
 
 ### Backend
+
 ```bash
 cd backend
 npm install
@@ -83,6 +93,7 @@ npm run dev
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
 npm install
@@ -147,9 +158,11 @@ npm run dev
    - Exportación de datos
 
 ## 📫 Contacto
+
 - Desarrollador: [Tu Nombre]
 - Email: [Tu Email]
 - GitHub: [Tu perfil de GitHub]
 
 ## 📄 Licencia
+
 Este proyecto está bajo la Licencia [Tipo de Licencia] - ver el archivo LICENSE.md para más detalles.
