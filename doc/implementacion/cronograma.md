@@ -1,4 +1,5 @@
-```gantt
+```mermaid
+gantt
     title Cronograma de Implementación - Villa del Sol
     dateFormat  YYYY-MM-DD
     section Fase 1: Preparación
