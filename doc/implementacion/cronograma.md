@@ -1,4 +1,4 @@
-gantt
+```gantt
     title Cronograma de Implementación - Villa del Sol
     dateFormat  YYYY-MM-DD
     section Fase 1: Preparación
@@ -41,3 +41,4 @@ gantt
     Pruebas de integración                   :2025-04-19, 4d
     Documentación final                      :2025-04-22, 3d
     Despliegue a producción                  :2025-04-24, 3d
+``
