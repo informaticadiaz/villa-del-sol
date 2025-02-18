@@ -61,6 +61,7 @@ touch src/config/{database,email,auth}.js
 
 ## Configurar Servidor
 
+```js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -111,6 +112,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
+```
 
 ## Variables de entorno
 
