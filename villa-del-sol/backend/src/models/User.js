@@ -1,6 +1,6 @@
 import { Model, DataTypes } from 'sequelize';
 import bcrypt from 'bcryptjs';
-import { sequelize } from '../utils/database.js';
+import sequelize from '../utils/database.js';
 
 class User extends Model {
   // Método de instancia para comparar contraseñas

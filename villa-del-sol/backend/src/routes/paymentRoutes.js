@@ -33,6 +33,54 @@ router.get(
 );
 
 /**
+ * @route   GET /api/payments/pending
+ * @desc    Get all pending payments
+ * @access  Private (Admin)
+ */
+router.get(
+  '/pending',
+  auth,
+  roleCheck(['admin']),
+  paymentController.getPendingPayments
+);
+
+/**
+ * @route   GET /api/payments/history
+ * @desc    Get payment history with date range filter
+ * @access  Private (Admin)
+ */
+router.get(
+  '/history',
+  auth,
+  roleCheck(['admin']),
+  paymentController.getPaymentHistory
+);
+
+/**
+ * @route   GET /api/payments/owner/:ownerId
+ * @desc    Get all payments for a specific owner
+ * @access  Private (Admin, Owner)
+ */
+router.get(
+  '/owner/:ownerId',
+  auth,
+  roleCheck(['admin', 'owner']),
+  paymentController.getPaymentsByOwner
+);
+
+/**
+ * @route   GET /api/payments/apartment/:apartmentId
+ * @desc    Get all payments for a specific apartment
+ * @access  Private (Admin, Owner of the apartment)
+ */
+router.get(
+  '/apartment/:apartmentId',
+  auth,
+  roleCheck(['admin', 'owner']),
+  paymentController.getPaymentsByApartment
+);
+
+/**
  * @route   GET /api/payments/:id
  * @desc    Get payment by ID
  * @access  Private (Admin, Owner of the payment)
@@ -67,54 +115,6 @@ router.delete(
   auth,
   roleCheck(['admin']),
   paymentController.deletePayment
-);
-
-/**
- * @route   GET /api/payments/owner/:ownerId
- * @desc    Get all payments for a specific owner
- * @access  Private (Admin, Owner)
- */
-router.get(
-  '/owner/:ownerId',
-  auth,
-  roleCheck(['admin', 'owner']),
-  paymentController.getPaymentsByOwner
-);
-
-/**
- * @route   GET /api/payments/apartment/:apartmentId
- * @desc    Get all payments for a specific apartment
- * @access  Private (Admin, Owner of the apartment)
- */
-router.get(
-  '/apartment/:apartmentId',
-  auth,
-  roleCheck(['admin', 'owner']),
-  paymentController.getPaymentsByApartment
-);
-
-/**
- * @route   GET /api/payments/pending
- * @desc    Get all pending payments
- * @access  Private (Admin)
- */
-router.get(
-  '/pending',
-  auth,
-  roleCheck(['admin']),
-  paymentController.getPendingPayments
-);
-
-/**
- * @route   GET /api/payments/history
- * @desc    Get payment history with date range filter
- * @access  Private (Admin)
- */
-router.get(
-  '/history',
-  auth,
-  roleCheck(['admin']),
-  paymentController.getPaymentHistory
 );
 
 export default router;

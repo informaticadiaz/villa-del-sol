@@ -1,4 +1,5 @@
 import { Op } from 'sequelize';
+import sequelize from '../config/database.js';
 import { Owner, Apartment, Payment, Visitor } from '../models/index.js';
 import { createError } from '../utils/error.js';
 
@@ -371,6 +372,132 @@ export const generateMonthlyPaymentsReport = async (req, res, next) => {
                 paidPayments: statistics[0].paidPayments
             },
             data: payments
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Generate report of visitor frequency by apartment
+ */
+export const generateVisitorFrequencyReport = async (req, res, next) => {
+    try {
+        const { startDate, endDate } = req.query;
+        const whereClause = {};
+
+        if (startDate || endDate) {
+            whereClause.entryTime = {};
+            if (startDate) whereClause.entryTime[Op.gte] = new Date(startDate);
+            if (endDate) whereClause.entryTime[Op.lte] = new Date(endDate);
+        }
+
+        const visitorFrequency = await Visitor.findAll({
+            where: whereClause,
+            attributes: [
+                'apartmentId',
+                [sequelize.fn('COUNT', sequelize.col('id')), 'totalVisits'],
+                [sequelize.fn('COUNT', sequelize.fn('DISTINCT', sequelize.col('identification'))), 'uniqueVisitors'],
+                [sequelize.fn('MAX', sequelize.col('entryTime')), 'lastVisit']
+            ],
+            include: [{
+                model: Apartment,
+                attributes: ['number'],
+                include: [{
+                    model: Owner,
+                    attributes: ['name', 'email']
+                }]
+            }],
+            group: ['apartmentId', 'Apartment.id', 'Apartment.number', 'Apartment.Owner.id', 'Apartment.Owner.name', 'Apartment.Owner.email'],
+            order: [[sequelize.fn('COUNT', sequelize.col('id')), 'DESC']]
+        });
+
+        res.status(200).json({
+            success: true,
+            data: visitorFrequency
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Generate custom report based on specified parameters
+ */
+export const generateCustomReport = async (req, res, next) => {
+    try {
+        const { 
+            startDate, 
+            endDate, 
+            includeOwners, 
+            includePayments, 
+            includeVisitors, 
+            includeApartments 
+        } = req.body;
+
+        const report = {
+            timeframe: {
+                start: startDate,
+                end: endDate
+            }
+        };
+
+        if (includeOwners) {
+            report.owners = await Owner.findAll({
+                attributes: ['id', 'name', 'email'],
+                include: [{
+                    model: Apartment,
+                    attributes: ['number', 'status']
+                }]
+            });
+        }
+
+        if (includePayments) {
+            const whereClause = {};
+            if (startDate || endDate) {
+                whereClause.date = {};
+                if (startDate) whereClause.date[Op.gte] = new Date(startDate);
+                if (endDate) whereClause.date[Op.lte] = new Date(endDate);
+            }
+
+            report.payments = await Payment.findAll({
+                where: whereClause,
+                include: [
+                    { model: Owner, attributes: ['name', 'email'] },
+                    { model: Apartment, attributes: ['number'] }
+                ]
+            });
+        }
+
+        if (includeVisitors) {
+            const whereClause = {};
+            if (startDate || endDate) {
+                whereClause.entryTime = {};
+                if (startDate) whereClause.entryTime[Op.gte] = new Date(startDate);
+                if (endDate) whereClause.entryTime[Op.lte] = new Date(endDate);
+            }
+
+            report.visitors = await Visitor.findAll({
+                where: whereClause,
+                include: [{
+                    model: Apartment,
+                    attributes: ['number']
+                }]
+            });
+        }
+
+        if (includeApartments) {
+            report.apartments = await Apartment.findAll({
+                include: [{
+                    model: Owner,
+                    attributes: ['name', 'email']
+                }]
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: report
         });
     } catch (error) {
         next(error);

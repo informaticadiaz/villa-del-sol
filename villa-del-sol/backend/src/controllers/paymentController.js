@@ -1,7 +1,7 @@
 import { Payment, Owner, Apartment } from '../models/index.js';
 import { Op } from 'sequelize';
 import { createError } from '../utils/error.js';
-import { sequelize } from '../config/database.js';
+import sequelize from '../config/database.js';
 
 /**
  * Register a new payment
@@ -282,6 +282,161 @@ export const getPaymentHistory = async (req, res, next) => {
             success: true,
             count: payments.length,
             summary: statistics[0],
+            data: payments
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get payment by ID
+ * @param {Request} req 
+ * @param {Response} res 
+ * @param {NextFunction} next 
+ */
+export const getPaymentById = async (req, res, next) => {
+    try {
+        const payment = await Payment.findByPk(req.params.id, {
+            include: [
+                { model: Owner, attributes: ['name', 'email'] },
+                { model: Apartment, attributes: ['number'] }
+            ]
+        });
+
+        if (!payment) {
+            return next(createError(404, 'Pago no encontrado'));
+        }
+
+        // If user is owner, verify ownership
+        if (req.user.role === 'owner' && payment.ownerId !== req.user.id) {
+            return next(createError(403, 'No autorizado para ver este pago'));
+        }
+
+        res.status(200).json({
+            success: true,
+            data: payment
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Update payment information
+ * @param {Request} req 
+ * @param {Response} res 
+ * @param {NextFunction} next 
+ */
+export const updatePayment = async (req, res, next) => {
+    try {
+        const payment = await Payment.findByPk(req.params.id);
+
+        if (!payment) {
+            return next(createError(404, 'Pago no encontrado'));
+        }
+
+        await payment.update(req.body);
+
+        const updatedPayment = await Payment.findByPk(payment.id, {
+            include: [
+                { model: Owner, attributes: ['name', 'email'] },
+                { model: Apartment, attributes: ['number'] }
+            ]
+        });
+
+        res.status(200).json({
+            success: true,
+            data: updatedPayment
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Delete a payment record
+ * @param {Request} req 
+ * @param {Response} res 
+ * @param {NextFunction} next 
+ */
+export const deletePayment = async (req, res, next) => {
+    try {
+        const payment = await Payment.findByPk(req.params.id);
+
+        if (!payment) {
+            return next(createError(404, 'Pago no encontrado'));
+        }
+
+        await payment.destroy();
+
+        res.status(200).json({
+            success: true,
+            message: 'Pago eliminado exitosamente'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get all payments for a specific owner
+ * @param {Request} req 
+ * @param {Response} res 
+ * @param {NextFunction} next 
+ */
+export const getPaymentsByOwner = async (req, res, next) => {
+    try {
+        // Verify if user is owner and requesting their own payments
+        if (req.user.role === 'owner' && req.params.ownerId !== req.user.id) {
+            return next(createError(403, 'No autorizado para ver estos pagos'));
+        }
+
+        const payments = await Payment.findAll({
+            where: { ownerId: req.params.ownerId },
+            include: [
+                { model: Apartment, attributes: ['number'] }
+            ],
+            order: [['date', 'DESC']]
+        });
+
+        res.status(200).json({
+            success: true,
+            count: payments.length,
+            data: payments
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get all payments for a specific apartment
+ * @param {Request} req 
+ * @param {Response} res 
+ * @param {NextFunction} next 
+ */
+export const getPaymentsByApartment = async (req, res, next) => {
+    try {
+        // If user is owner, verify apartment ownership
+        if (req.user.role === 'owner') {
+            const apartment = await Apartment.findByPk(req.params.apartmentId);
+            if (!apartment || apartment.ownerId !== req.user.id) {
+                return next(createError(403, 'No autorizado para ver estos pagos'));
+            }
+        }
+
+        const payments = await Payment.findAll({
+            where: { apartmentId: req.params.apartmentId },
+            include: [
+                { model: Owner, attributes: ['name', 'email'] }
+            ],
+            order: [['date', 'DESC']]
+        });
+
+        res.status(200).json({
+            success: true,
+            count: payments.length,
             data: payments
         });
     } catch (error) {
