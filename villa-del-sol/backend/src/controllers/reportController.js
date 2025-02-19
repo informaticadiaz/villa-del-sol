@@ -1,41 +1,45 @@
-import { Owner } from '../models/Owner.js';
-import { Apartment } from '../models/Apartment.js';
-import { Payment } from '../models/Payment.js';
-import { Visitor } from '../models/Visitor.js';
+import { Op } from 'sequelize';
+import { Owner, Apartment, Payment, Visitor } from '../models/index.js';
 import { createError } from '../utils/error.js';
 
 /**
  * Generate report of all owners and their properties
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
  */
 export const generateOwnersReport = async (req, res, next) => {
     try {
-        const owners = await Owner.find().select('-password');
-        
-        // Get apartments for each owner
-        const ownersData = await Promise.all(owners.map(async (owner) => {
-            const apartments = await Apartment.find({ owner: owner._id });
-            const payments = await Payment.find({ owner: owner._id });
-            
-            const totalPayments = payments.reduce((sum, payment) => sum + payment.amount, 0);
-            const pendingPayments = payments
-                .filter(payment => payment.status === 'pending')
-                .reduce((sum, payment) => sum + payment.amount, 0);
+        const owners = await Owner.findAll({
+            include: [{
+                model: Apartment,
+                include: [{
+                    model: Payment,
+                    attributes: [
+                        [sequelize.fn('SUM', sequelize.col('amount')), 'totalAmount'],
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'paymentCount']
+                    ],
+                    where: {
+                        status: 'pending'
+                    }
+                }]
+            }],
+            attributes: {
+                include: [
+                    [sequelize.literal(`(
+                        SELECT COUNT(*) FROM apartments 
+                        WHERE apartments.owner_id = Owner.id
+                    )`), 'apartmentCount']
+                ]
+            }
+        });
 
-            return {
-                ownerInfo: owner,
-                apartments: apartments,
-                statistics: {
-                    totalApartments: apartments.length,
-                    totalPayments,
-                    pendingPayments,
-                    paymentStatus: totalPayments > 0 ? 
-                        ((totalPayments - pendingPayments) / totalPayments * 100).toFixed(2) + '%' : 
-                        '0%'
-                }
-            };
+        const ownersData = owners.map(owner => ({
+            ownerInfo: owner,
+            statistics: {
+                totalApartments: owner.apartmentCount,
+                totalPayments: owner.Apartments.reduce((sum, apt) => 
+                    sum + apt.Payments.reduce((pSum, p) => pSum + p.amount, 0), 0),
+                pendingPayments: owner.Apartments.reduce((sum, apt) => 
+                    sum + (apt.Payments[0]?.totalAmount || 0), 0)
+            }
         }));
 
         res.status(200).json({
@@ -50,63 +54,72 @@ export const generateOwnersReport = async (req, res, next) => {
 
 /**
  * Generate payment status report with optional date range
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
  */
 export const generatePaymentsReport = async (req, res, next) => {
     try {
         const { startDate, endDate } = req.query;
-        const query = {};
+        const whereClause = {};
 
         if (startDate || endDate) {
-            query.date = {};
-            if (startDate) query.date.$gte = new Date(startDate);
-            if (endDate) query.date.$lte = new Date(endDate);
+            whereClause.date = {};
+            if (startDate) whereClause.date[Op.gte] = new Date(startDate);
+            if (endDate) whereClause.date[Op.lte] = new Date(endDate);
         }
 
-        const payments = await Payment.find(query)
-            .populate('owner', 'name email')
-            .populate('apartment', 'number')
-            .sort({ date: -1 });
+        const payments = await Payment.findAll({
+            where: whereClause,
+            include: [
+                { 
+                    model: Owner,
+                    attributes: ['name', 'email']
+                },
+                {
+                    model: Apartment,
+                    attributes: ['number']
+                }
+            ],
+            attributes: {
+                include: [
+                    [sequelize.fn('date_trunc', 'month', sequelize.col('date')), 'month']
+                ]
+            },
+            order: [['date', 'DESC']]
+        });
 
-        // Calculate summary statistics
-        const totalAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
-        const paidAmount = payments
-            .filter(payment => payment.status === 'paid')
-            .reduce((sum, payment) => sum + payment.amount, 0);
-        
-        // Group payments by month
-        const monthlyPayments = payments.reduce((acc, payment) => {
-            const month = payment.date.toLocaleString('default', { month: 'long', year: 'numeric' });
-            if (!acc[month]) {
-                acc[month] = {
-                    total: 0,
-                    paid: 0,
-                    pending: 0
-                };
-            }
-            acc[month].total += payment.amount;
-            if (payment.status === 'paid') {
-                acc[month].paid += payment.amount;
-            } else {
-                acc[month].pending += payment.amount;
-            }
-            return acc;
-        }, {});
+        // Calculate summary statistics using Sequelize aggregations
+        const summary = await Payment.findAll({
+            where: whereClause,
+            attributes: [
+                [sequelize.fn('SUM', sequelize.col('amount')), 'totalAmount'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'totalPayments'],
+                [sequelize.literal(`SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END)`), 'paidAmount'],
+                [sequelize.literal(`COUNT(CASE WHEN status = 'paid' THEN 1 END)`), 'paidPayments']
+            ],
+            raw: true
+        });
+
+        // Group payments by month using Sequelize
+        const monthlyPayments = await Payment.findAll({
+            where: whereClause,
+            attributes: [
+                [sequelize.fn('date_trunc', 'month', sequelize.col('date')), 'month'],
+                [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+                [sequelize.literal(`SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END)`), 'paid'],
+                [sequelize.literal(`SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END)`), 'pending']
+            ],
+            group: [sequelize.fn('date_trunc', 'month', sequelize.col('date'))],
+            order: [[sequelize.fn('date_trunc', 'month', sequelize.col('date')), 'DESC']],
+            raw: true
+        });
 
         res.status(200).json({
             success: true,
             summary: {
-                totalAmount,
-                paidAmount,
-                pendingAmount: totalAmount - paidAmount,
-                collectionRate: totalAmount > 0 ? 
-                    ((paidAmount / totalAmount) * 100).toFixed(2) + '%' : 
-                    '0%',
-                totalPayments: payments.length,
-                paidPayments: payments.filter(p => p.status === 'paid').length,
-                pendingPayments: payments.filter(p => p.status === 'pending').length
+                ...summary[0],
+                pendingAmount: summary[0].totalAmount - summary[0].paidAmount,
+                collectionRate: summary[0].totalAmount > 0 ? 
+                    ((summary[0].paidAmount / summary[0].totalAmount) * 100).toFixed(2) + '%' : 
+                    '0%'
             },
             monthlyBreakdown: monthlyPayments,
             data: payments
@@ -118,57 +131,69 @@ export const generatePaymentsReport = async (req, res, next) => {
 
 /**
  * Generate visitor statistics report
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
  */
 export const generateVisitorsReport = async (req, res, next) => {
     try {
         const { startDate, endDate } = req.query;
-        const query = {};
+        const whereClause = {};
 
         if (startDate || endDate) {
-            query.entryTime = {};
-            if (startDate) query.entryTime.$gte = new Date(startDate);
-            if (endDate) query.entryTime.$lte = new Date(endDate);
+            whereClause.entryTime = {};
+            if (startDate) whereClause.entryTime[Op.gte] = new Date(startDate);
+            if (endDate) whereClause.entryTime[Op.lte] = new Date(endDate);
         }
 
-        const visitors = await Visitor.find(query)
-            .populate('apartment', 'number')
-            .sort({ entryTime: -1 });
+        // Get visitors with apartment info
+        const visitors = await Visitor.findAll({
+            where: whereClause,
+            include: [{
+                model: Apartment,
+                attributes: ['number'],
+                include: [{
+                    model: Owner,
+                    attributes: ['name', 'email']
+                }]
+            }],
+            order: [['entryTime', 'DESC']]
+        });
 
-        // Calculate statistics
-        const totalVisits = visitors.length;
-        const uniqueVisitors = new Set(visitors.map(v => v.identification)).size;
-        
-        // Group by apartment
-        const visitorsByApartment = visitors.reduce((acc, visitor) => {
-            const aptNumber = visitor.apartment.number;
-            if (!acc[aptNumber]) {
-                acc[aptNumber] = {
-                    totalVisits: 0,
-                    uniqueVisitors: new Set()
-                };
-            }
-            acc[aptNumber].totalVisits++;
-            acc[aptNumber].uniqueVisitors.add(visitor.identification);
-            return acc;
-        }, {});
+        // Calculate statistics using Sequelize aggregations
+        const statistics = await Visitor.findAll({
+            where: whereClause,
+            attributes: [
+                [sequelize.fn('COUNT', sequelize.col('id')), 'totalVisits'],
+                [sequelize.fn('COUNT', sequelize.fn('DISTINCT', sequelize.col('identification'))), 'uniqueVisitors'],
+                [sequelize.literal(`
+                    AVG(EXTRACT(EPOCH FROM (exit_time - entry_time))/60)
+                `), 'averageVisitDuration']
+            ],
+            raw: true
+        });
 
-        // Convert Set to size for JSON
-        Object.keys(visitorsByApartment).forEach(apt => {
-            visitorsByApartment[apt].uniqueVisitors = visitorsByApartment[apt].uniqueVisitors.size;
+        // Get visitor frequency by apartment
+        const visitorFrequency = await Visitor.findAll({
+            where: whereClause,
+            attributes: [
+                'apartmentId',
+                [sequelize.fn('COUNT', sequelize.col('id')), 'totalVisits'],
+                [sequelize.fn('COUNT', sequelize.fn('DISTINCT', sequelize.col('identification'))), 'uniqueVisitors']
+            ],
+            include: [{
+                model: Apartment,
+                attributes: ['number']
+            }],
+            group: ['apartmentId', 'Apartment.id'],
+            order: [[sequelize.fn('COUNT', sequelize.col('id')), 'DESC']],
+            raw: true
         });
 
         res.status(200).json({
             success: true,
             summary: {
-                totalVisits,
-                uniqueVisitors,
-                averageVisitDuration: calculateAverageVisitDuration(visitors),
-                mostVisitedApartments: getMostVisitedApartments(visitorsByApartment)
+                ...statistics[0],
+                averageVisitDuration: Math.round(statistics[0].averageVisitDuration || 0)
             },
-            byApartment: visitorsByApartment,
+            byApartment: visitorFrequency,
             data: visitors
         });
     } catch (error) {
@@ -178,41 +203,46 @@ export const generateVisitorsReport = async (req, res, next) => {
 
 /**
  * Generate report of apartment occupancy status
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
  */
 export const generateApartmentStatusReport = async (req, res, next) => {
     try {
-        const apartments = await Apartment.find()
-            .populate('owner', 'name email')
-            .sort({ number: 1 });
+        // Get apartments with owner info
+        const apartments = await Apartment.findAll({
+            include: [{
+                model: Owner,
+                attributes: ['name', 'email']
+            }],
+            order: [['number', 'ASC']]
+        });
 
-        const totalApartments = apartments.length;
-        const occupiedApartments = apartments.filter(apt => apt.status === 'occupied').length;
-        
-        // Group by floor
-        const byFloor = apartments.reduce((acc, apt) => {
-            const floor = Math.floor(apt.number / 100); // Assuming apartment numbers like 101, 102, etc.
-            if (!acc[floor]) {
-                acc[floor] = {
-                    total: 0,
-                    occupied: 0,
-                    unoccupied: 0
-                };
-            }
-            acc[floor].total++;
-            acc[floor][apt.status]++;
-            return acc;
-        }, {});
+        // Calculate statistics using Sequelize aggregations
+        const statistics = await Apartment.findAll({
+            attributes: [
+                [sequelize.fn('COUNT', sequelize.col('id')), 'totalApartments'],
+                [sequelize.literal(`COUNT(CASE WHEN status = 'occupied' THEN 1 END)`), 'occupiedApartments']
+            ],
+            raw: true
+        });
+
+        // Group by floor using Sequelize
+        const byFloor = await Apartment.findAll({
+            attributes: [
+                [sequelize.literal('FLOOR(number::integer/100)'), 'floor'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'total'],
+                [sequelize.literal(`COUNT(CASE WHEN status = 'occupied' THEN 1 END)`), 'occupied'],
+                [sequelize.literal(`COUNT(CASE WHEN status = 'unoccupied' THEN 1 END)`), 'unoccupied']
+            ],
+            group: [sequelize.literal('FLOOR(number::integer/100)')],
+            order: [sequelize.literal('floor')],
+            raw: true
+        });
 
         res.status(200).json({
             success: true,
             summary: {
-                totalApartments,
-                occupiedApartments,
-                unoccupiedApartments: totalApartments - occupiedApartments,
-                occupancyRate: ((occupiedApartments / totalApartments) * 100).toFixed(2) + '%'
+                ...statistics[0],
+                unoccupiedApartments: statistics[0].totalApartments - statistics[0].occupiedApartments,
+                occupancyRate: ((statistics[0].occupiedApartments / statistics[0].totalApartments) * 100).toFixed(2) + '%'
             },
             byFloor,
             data: apartments
@@ -224,41 +254,54 @@ export const generateApartmentStatusReport = async (req, res, next) => {
 
 /**
  * Generate report of pending payments
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
  */
 export const generatePendingPaymentsReport = async (req, res, next) => {
     try {
-        const pendingPayments = await Payment.find({ status: 'pending' })
-            .populate('owner', 'name email')
-            .populate('apartment', 'number')
-            .sort({ dueDate: 1 });
+        const pendingPayments = await Payment.findAll({
+            where: { status: 'pending' },
+            include: [
+                {
+                    model: Owner,
+                    attributes: ['name', 'email']
+                },
+                {
+                    model: Apartment,
+                    attributes: ['number']
+                }
+            ],
+            order: [['dueDate', 'ASC']]
+        });
 
-        // Group by owner
-        const byOwner = pendingPayments.reduce((acc, payment) => {
-            const ownerId = payment.owner._id.toString();
-            if (!acc[ownerId]) {
-                acc[ownerId] = {
-                    ownerInfo: payment.owner,
-                    totalPending: 0,
-                    payments: []
-                };
-            }
-            acc[ownerId].totalPending += payment.amount;
-            acc[ownerId].payments.push(payment);
-            return acc;
-        }, {});
+        // Calculate summary using Sequelize aggregations
+        const summary = await Payment.findAll({
+            where: { status: 'pending' },
+            attributes: [
+                [sequelize.fn('SUM', sequelize.col('amount')), 'totalPendingAmount'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'totalPendingPayments'],
+                [sequelize.fn('COUNT', sequelize.fn('DISTINCT', sequelize.col('ownerId'))), 'uniqueOwnersWithPending']
+            ],
+            raw: true
+        });
 
-        const totalPending = pendingPayments.reduce((sum, payment) => sum + payment.amount, 0);
+        // Group by owner using Sequelize
+        const byOwner = await Payment.findAll({
+            where: { status: 'pending' },
+            attributes: [
+                'ownerId',
+                [sequelize.fn('SUM', sequelize.col('amount')), 'totalPending'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'paymentCount']
+            ],
+            include: [{
+                model: Owner,
+                attributes: ['name', 'email']
+            }],
+            group: ['ownerId', 'Owner.id'],
+            raw: true
+        });
 
         res.status(200).json({
             success: true,
-            summary: {
-                totalPendingAmount: totalPending,
-                totalPendingPayments: pendingPayments.length,
-                uniqueOwnersWithPending: Object.keys(byOwner).length
-            },
+            summary: summary[0],
             byOwner,
             data: pendingPayments
         });
@@ -269,9 +312,6 @@ export const generatePendingPaymentsReport = async (req, res, next) => {
 
 /**
  * Generate monthly payment collection report
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
  */
 export const generateMonthlyPaymentsReport = async (req, res, next) => {
     try {
@@ -283,18 +323,41 @@ export const generateMonthlyPaymentsReport = async (req, res, next) => {
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0);
 
-        const payments = await Payment.find({
-            date: {
-                $gte: startDate,
-                $lte: endDate
-            }
-        }).populate('owner', 'name email')
-          .populate('apartment', 'number');
+        const payments = await Payment.findAll({
+            where: {
+                date: {
+                    [Op.between]: [startDate, endDate]
+                }
+            },
+            include: [
+                {
+                    model: Owner,
+                    attributes: ['name', 'email']
+                },
+                {
+                    model: Apartment,
+                    attributes: ['number']
+                }
+            ]
+        });
 
+        // Calculate statistics using Sequelize
+        const statistics = await Payment.findAll({
+            where: {
+                date: {
+                    [Op.between]: [startDate, endDate]
+                }
+            },
+            attributes: [
+                [sequelize.fn('SUM', sequelize.col('amount')), 'totalCollected'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'totalPayments'],
+                [sequelize.literal(`COUNT(CASE WHEN status = 'paid' THEN 1 END)`), 'paidPayments']
+            ],
+            raw: true
+        });
+
+        // Calculate total expected payments
         const totalExpected = await calculateTotalExpectedPayments(month, year);
-        const totalCollected = payments
-            .filter(payment => payment.status === 'paid')
-            .reduce((sum, payment) => sum + payment.amount, 0);
 
         res.status(200).json({
             success: true,
@@ -302,10 +365,10 @@ export const generateMonthlyPaymentsReport = async (req, res, next) => {
                 month: startDate.toLocaleString('default', { month: 'long' }),
                 year,
                 totalExpected,
-                totalCollected,
-                collectionRate: ((totalCollected / totalExpected) * 100).toFixed(2) + '%',
-                totalPayments: payments.length,
-                paidPayments: payments.filter(p => p.status === 'paid').length
+                totalCollected: statistics[0].totalCollected || 0,
+                collectionRate: ((statistics[0].totalCollected / totalExpected) * 100).toFixed(2) + '%',
+                totalPayments: statistics[0].totalPayments,
+                paidPayments: statistics[0].paidPayments
             },
             data: payments
         });
@@ -314,237 +377,9 @@ export const generateMonthlyPaymentsReport = async (req, res, next) => {
     }
 };
 
-/**
- * Generate report of visitor frequency by apartment
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
- */
-export const generateVisitorFrequencyReport = async (req, res, next) => {
-    try {
-        const { startDate, endDate } = req.query;
-        const query = {};
-
-        if (startDate || endDate) {
-            query.entryTime = {};
-            if (startDate) query.entryTime.$gte = new Date(startDate);
-            if (endDate) query.entryTime.$lte = new Date(endDate);
-        }
-
-        const visitors = await Visitor.find(query)
-            .populate('apartment', 'number')
-            .populate({
-                path: 'apartment',
-                populate: {
-                    path: 'owner',
-                    select: 'name email'
-                }
-            });
-
-        // Calculate frequency statistics
-        const frequencyStats = calculateVisitorFrequency(visitors);
-
-        res.status(200).json({
-            success: true,
-            summary: {
-                totalVisits: visitors.length,
-                periodStart: startDate || 'All time',
-                periodEnd: endDate || 'Current',
-                averageVisitsPerApartment: (visitors.length / frequencyStats.uniqueApartments).toFixed(2)
-            },
-            frequency: frequencyStats.byApartment,
-            data: visitors
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Generate custom report based on specified parameters
- * @param {Request} req 
- * @param {Response} res 
- * @param {NextFunction} next 
- */
-export const generateCustomReport = async (req, res, next) => {
-    try {
-        const { 
-            startDate, 
-            endDate, 
-            includeOwners, 
-            includePayments, 
-            includeVisitors, 
-            includeApartments 
-        } = req.body;
-
-        const report = {
-            timeframe: {
-                start: startDate,
-                end: endDate
-            }
-        };
-
-        if (includeOwners) {
-            report.owners = await generateOwnerSection();
-        }
-
-        if (includePayments) {
-            report.payments = await generatePaymentSection(startDate, endDate);
-        }
-
-        if (includeVisitors) {
-            report.visitors = await generateVisitorSection(startDate, endDate);
-        }
-
-        if (includeApartments) {
-            report.apartments = await generateApartmentSection();
-        }
-
-        res.status(200).json({
-            success: true,
-            data: report
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// Utility functions
-const calculateAverageVisitDuration = (visitors) => {
-    const completedVisits = visitors.filter(v => v.exitTime);
-    if (completedVisits.length === 0) return 'N/A';
-
-    const totalDuration = completedVisits.reduce((sum, visit) => {
-        return sum + (new Date(visit.exitTime) - new Date(visit.entryTime));
-    }, 0);
-
-    const avgMinutes = totalDuration / (completedVisits.length * 60000);
-    return `${Math.round(avgMinutes)} minutes`;
-};
-
-const getMostVisitedApartments = (visitorsByApartment, limit = 5) => {
-    return Object.entries(visitorsByApartment)
-        .sort((a, b) => b[1].totalVisits - a[1].totalVisits)
-        .slice(0, limit)
-        .map(([aptNumber, stats]) => ({
-            apartmentNumber: aptNumber,
-            ...stats
-        }));
-};
-
-const calculateVisitorFrequency = (visitors) => {
-    const byApartment = visitors.reduce((acc, visitor) => {
-        const aptNumber = visitor.apartment.number;
-        if (!acc[aptNumber]) {
-            acc[aptNumber] = {
-                apartmentInfo: {
-                    number: aptNumber,
-                    owner: visitor.apartment.owner
-                },
-                visitCount: 0,
-                uniqueVisitors: new Set(),
-                averageVisitDuration: 0,
-                lastVisit: null
-            };
-        }
-        acc[aptNumber].visitCount++;
-        acc[aptNumber].uniqueVisitors.add(visitor.identification);
-        acc[aptNumber].lastVisit = visitor.entryTime;
-        return acc;
-    }, {});
-
-    // Convert Sets to sizes and calculate final stats
-    Object.values(byApartment).forEach(apt => {
-        apt.uniqueVisitors = apt.uniqueVisitors.size;
-    });
-
-    return {
-        uniqueApartments: Object.keys(byApartment).length,
-        byApartment
-    };
-};
-
+// Utility function to calculate expected payments
 const calculateTotalExpectedPayments = async (month, year) => {
-    const apartments = await Apartment.find();
-    // Assuming a fixed monthly fee per apartment
-    const monthlyFee = process.env.MONTHLY_FEE || 100000; // Default value if not set
-    return apartments.length * monthlyFee;
-};
-
-const generateOwnerSection = async () => {
-    const owners = await Owner.find().select('-password');
-    const ownerStats = await Promise.all(owners.map(async (owner) => {
-        const apartments = await Apartment.find({ owner: owner._id });
-        const payments = await Payment.find({ owner: owner._id });
-        
-        return {
-            owner: {
-                id: owner._id,
-                name: owner.name,
-                email: owner.email
-            },
-            apartmentCount: apartments.length,
-            paymentStats: {
-                total: payments.reduce((sum, p) => sum + p.amount, 0),
-                pending: payments
-                    .filter(p => p.status === 'pending')
-                    .reduce((sum, p) => sum + p.amount, 0)
-            }
-        };
-    }));
-
-    return ownerStats;
-};
-
-const generatePaymentSection = async (startDate, endDate) => {
-    const query = {};
-    if (startDate || endDate) {
-        query.date = {};
-        if (startDate) query.date.$gte = new Date(startDate);
-        if (endDate) query.date.$lte = new Date(endDate);
-    }
-
-    const payments = await Payment.find(query)
-        .populate('owner', 'name email')
-        .populate('apartment', 'number');
-
-    return {
-        total: payments.reduce((sum, p) => sum + p.amount, 0),
-        count: payments.length,
-        paid: payments.filter(p => p.status === 'paid').length,
-        pending: payments.filter(p => p.status === 'pending').length
-    };
-};
-
-const generateVisitorSection = async (startDate, endDate) => {
-    const query = {};
-    if (startDate || endDate) {
-        query.entryTime = {};
-        if (startDate) query.entryTime.$gte = new Date(startDate);
-        if (endDate) query.entryTime.$lte = new Date(endDate);
-    }
-
-    const visitors = await Visitor.find(query);
-    
-    return {
-        totalVisits: visitors.length,
-        uniqueVisitors: new Set(visitors.map(v => v.identification)).size,
-        averageDuration: calculateAverageVisitDuration(visitors)
-    };
-};
-
-const generateApartmentSection = async () => {
-    const apartments = await Apartment.find();
-    
-    return {
-        total: apartments.length,
-        occupied: apartments.filter(a => a.status === 'occupied').length,
-        unoccupied: apartments.filter(a => a.status === 'unoccupied').length,
-        byFloor: apartments.reduce((acc, apt) => {
-            const floor = Math.floor(apt.number / 100);
-            if (!acc[floor]) acc[floor] = 0;
-            acc[floor]++;
-            return acc;
-        }, {})
-    };
+    const apartmentCount = await Apartment.count();
+    const monthlyFee = process.env.MONTHLY_FEE || 100000;
+    return apartmentCount * monthlyFee;
 };
