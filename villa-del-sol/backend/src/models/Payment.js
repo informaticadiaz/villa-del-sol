@@ -1,48 +1,109 @@
-// Payment.js
-import mongoose from 'mongoose';
+import { Model, DataTypes } from 'sequelize';
+import { sequelize } from '../utils/database.js';
 
-const paymentSchema = new mongoose.Schema({
-  owner: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Owner',
-    required: [true, 'El propietario es requerido']
+class Payment extends Model {}
+
+Payment.init({
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
-  apartment: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Apartment',
-    required: [true, 'El apartamento es requerido']
+  // Referencia al propietario (llave foránea)
+  ownerId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'owners',
+      key: 'id'
+    },
+    field: 'owner_id'
   },
+  // Referencia al apartamento (llave foránea)
+  apartmentId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'apartments',
+      key: 'id'
+    },
+    field: 'apartment_id'
+  },
+  // Monto usando tipo DECIMAL para precisión monetaria
   amount: {
-    type: Number,
-    required: [true, 'El monto es requerido'],
-    min: [0, 'El monto no puede ser negativo']
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0,
+      isDecimal: true
+    }
   },
+  // Concepto del pago
   concept: {
-    type: String,
-    required: [true, 'El concepto es requerido'],
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      notEmpty: true
+    }
   },
+  // Fecha del pago
   date: {
-    type: Date,
-    required: [true, 'La fecha es requerida'],
-    default: Date.now
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
+  // Estado del pago usando ENUM
   status: {
-    type: String,
-    enum: ['pending', 'paid', 'cancelled'],
-    default: 'pending'
+    type: DataTypes.ENUM('pending', 'paid', 'cancelled'),
+    defaultValue: 'pending',
+    allowNull: false
   },
+  // Método de pago usando ENUM
   paymentMethod: {
-    type: String,
-    enum: ['cash', 'transfer', 'check', 'card'],
-    required: [true, 'El método de pago es requerido']
+    type: DataTypes.ENUM('cash', 'transfer', 'check', 'card'),
+    allowNull: false,
+    field: 'payment_method'
   },
+  // Referencia de pago
   reference: {
-    type: String,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
-  timestamps: true
+  sequelize,
+  modelName: 'Payment',
+  tableName: 'payments',
+  underscored: true, // Usa snake_case para nombres de columnas
+  indexes: [
+    // Índice para búsquedas por propietario
+    {
+      name: 'idx_payments_owner',
+      fields: ['owner_id']
+    },
+    // Índice para búsquedas por apartamento
+    {
+      name: 'idx_payments_apartment',
+      fields: ['apartment_id']
+    },
+    // Índice compuesto para búsquedas por fecha y estado
+    {
+      name: 'idx_payments_date_status',
+      fields: ['date', 'status']
+    }
+  ]
 });
 
-export const Payment = mongoose.model('Payment', paymentSchema);
+// Definición de asociaciones
+export const associatePayment = (models) => {
+  Payment.belongsTo(models.Owner, {
+    foreignKey: 'ownerId',
+    as: 'owner'
+  });
+  
+  Payment.belongsTo(models.Apartment, {
+    foreignKey: 'apartmentId',
+    as: 'apartment'
+  });
+};
+
+export default Payment;
