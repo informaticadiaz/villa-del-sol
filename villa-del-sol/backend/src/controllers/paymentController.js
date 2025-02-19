@@ -1,4 +1,4 @@
-import { Payment, Owner, Apartment } from '../models';
+import { Payment, Owner, Apartment } from '../models/index.js';
 import { Op } from 'sequelize';
 import { createError } from '../utils/error.js';
 import { sequelize } from '../config/database.js';
