@@ -1,43 +1,84 @@
+import { Model, DataTypes } from 'sequelize';
+import sequelize from '../utils/database.js';
+import { Owner } from './Owner.js';
 
+class Apartment extends Model {}
 
-// Apartment.js
-import mongoose from 'mongoose';
-
-const apartmentSchema = new mongoose.Schema({
+Apartment.init({
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   number: {
-    type: String,
-    required: [true, 'El número de apartamento es requerido'],
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    trim: true
+    validate: {
+      notEmpty: true
+    }
   },
   floor: {
-    type: Number,
-    required: [true, 'El piso es requerido']
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: {
+      min: 1
+    }
   },
-  owner: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Owner'
+  // Llave foránea para Owner (reemplazando ObjectId)
+  ownerId: {
+    type: DataTypes.UUID,
+    references: {
+      model: Owner,
+      key: 'id'
+    },
+    // Permitimos null para apartamentos sin propietario
+    allowNull: true
   },
   status: {
-    type: String,
-    enum: ['occupied', 'unoccupied'],
-    default: 'unoccupied'
+    type: DataTypes.ENUM('occupied', 'unoccupied'),
+    defaultValue: 'unoccupied',
+    allowNull: false,
+    validate: {
+      isIn: [['occupied', 'unoccupied']]
+    }
   },
   area: {
-    type: Number,
-    required: [true, 'El área es requerida']
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   }
 }, {
-  timestamps: true
+  sequelize,
+  modelName: 'Apartment',
+  // Configuración de timestamps (created_at, updated_at)
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  // Índices para mejorar performance
+  indexes: [
+    {
+      unique: true,
+      fields: ['number']
+    },
+    {
+      fields: ['ownerId']
+    },
+    {
+      fields: ['status']
+    },
+    {
+      fields: ['floor']
+    }
+  ]
 });
 
-export const Apartment = mongoose.model('Apartment', apartmentSchema);
+// Definir relaciones
+Apartment.belongsTo(Owner, {
+  foreignKey: 'ownerId',
+  as: 'owner'
+});
 
-
-
-
-
+export default Apartment;
