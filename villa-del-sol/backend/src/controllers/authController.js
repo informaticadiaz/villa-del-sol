@@ -14,9 +14,11 @@ export const register = async (req, res, next) => {
     try {
         const { username, email, password, role } = req.body;
 
-        // Check if user already exists
-        const existingUser = await User.findOne({ 
-            $or: [{ email }, { username }] 
+        // Check if user already exists - Modified for Sequelize
+        const existingUser = await User.findOne({
+            where: {
+                [Op.or]: [{ email }, { username }]
+            }
         });
         
         if (existingUser) {
@@ -27,23 +29,21 @@ export const register = async (req, res, next) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Create new user
-        const user = new User({
+        // Create new user - Modified for Sequelize
+        const user = await User.create({
             username,
             email,
             password: hashedPassword,
             role
         });
 
-        // Save user
-        const savedUser = await user.save();
-
         // Remove password from response
-        savedUser.password = undefined;
+        const userResponse = user.toJSON();
+        delete userResponse.password;
 
         res.status(201).json({
             success: true,
-            data: savedUser
+            data: userResponse
         });
     } catch (error) {
         next(error);
@@ -60,8 +60,12 @@ export const login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        // Check if user exists
-        const user = await User.findOne({ email });
+        // Check if user exists - Modified for Sequelize
+        const user = await User.findOne({
+            where: { email },
+            attributes: ['id', 'email', 'password', 'username', 'role']
+        });
+
         if (!user) {
             return next(createError(401, 'Credenciales inválidas'));
         }
@@ -73,20 +77,23 @@ export const login = async (req, res, next) => {
         }
 
         // Generate tokens
-        const accessToken = generateAccessToken(user._id);
-        const refreshToken = generateRefreshToken(user._id);
+        const accessToken = generateAccessToken(user.id);
+        const refreshToken = generateRefreshToken(user.id);
 
-        // Save refresh token to user
-        user.refreshToken = refreshToken;
-        await user.save();
+        // Update refresh token in database - Modified for Sequelize
+        await user.update({ 
+            refreshToken,
+            lastLogin: new Date()
+        });
 
-        // Remove password from response
-        user.password = undefined;
+        // Prepare response without password
+        const userResponse = user.toJSON();
+        delete userResponse.password;
 
         res.status(200).json({
             success: true,
             data: {
-                user,
+                user: userResponse,
                 accessToken,
                 refreshToken
             }
@@ -104,10 +111,11 @@ export const login = async (req, res, next) => {
  */
 export const logout = async (req, res, next) => {
     try {
-        // Clear refresh token in database
-        const user = await User.findById(req.user.id);
-        user.refreshToken = null;
-        await user.save();
+        // Clear refresh token - Modified for Sequelize
+        await User.update(
+            { refreshToken: null },
+            { where: { id: req.user.id } }
+        );
 
         res.status(200).json({
             success: true,
@@ -126,7 +134,10 @@ export const logout = async (req, res, next) => {
  */
 export const getCurrentUser = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id).select('-password');
+        // Modified for Sequelize
+        const user = await User.findByPk(req.user.id, {
+            attributes: { exclude: ['password'] }
+        });
         
         res.status(200).json({
             success: true,
@@ -147,8 +158,8 @@ export const changePassword = async (req, res, next) => {
     try {
         const { currentPassword, newPassword } = req.body;
 
-        // Get user
-        const user = await User.findById(req.user.id);
+        // Get user - Modified for Sequelize
+        const user = await User.findByPk(req.user.id);
 
         // Verify current password
         const isMatch = await bcrypt.compare(currentPassword, user.password);
@@ -158,9 +169,10 @@ export const changePassword = async (req, res, next) => {
 
         // Hash new password
         const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(newPassword, salt);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-        await user.save();
+        // Update password - Modified for Sequelize
+        await user.update({ password: hashedPassword });
 
         res.status(200).json({
             success: true,
@@ -181,18 +193,21 @@ export const forgotPassword = async (req, res, next) => {
     try {
         const { email } = req.body;
 
-        // Find user
-        const user = await User.findOne({ email });
+        // Find user - Modified for Sequelize
+        const user = await User.findOne({ where: { email } });
         if (!user) {
             return next(createError(404, 'No existe usuario con ese email'));
         }
 
         // Generate reset token
-        const resetToken = generateResetToken();
-        user.resetPasswordToken = resetToken;
-        user.resetPasswordExpire = Date.now() + 3600000; // 1 hour
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        const resetPasswordExpire = new Date(Date.now() + 3600000); // 1 hour
 
-        await user.save();
+        // Update user with reset token - Modified for Sequelize
+        await user.update({
+            resetPasswordToken: resetToken,
+            resetPasswordExpire
+        });
 
         // Send email
         const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
@@ -222,10 +237,14 @@ export const resetPassword = async (req, res, next) => {
     try {
         const { token, password } = req.body;
 
-        // Find user with valid reset token
+        // Find user with valid reset token - Modified for Sequelize
         const user = await User.findOne({
-            resetPasswordToken: token,
-            resetPasswordExpire: { $gt: Date.now() }
+            where: {
+                resetPasswordToken: token,
+                resetPasswordExpire: {
+                    [Op.gt]: new Date()
+                }
+            }
         });
 
         if (!user) {
@@ -234,13 +253,14 @@ export const resetPassword = async (req, res, next) => {
 
         // Hash new password
         const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(password, salt);
+        const hashedPassword = await bcrypt.hash(password, salt);
         
-        // Clear reset token fields
-        user.resetPasswordToken = undefined;
-        user.resetPasswordExpire = undefined;
-
-        await user.save();
+        // Update user - Modified for Sequelize
+        await user.update({
+            password: hashedPassword,
+            resetPasswordToken: null,
+            resetPasswordExpire: null
+        });
 
         res.status(200).json({
             success: true,
@@ -261,11 +281,15 @@ export const updateProfile = async (req, res, next) => {
     try {
         const { username, email } = req.body;
 
-        // Check if email is already taken
+        // Check if email is already taken - Modified for Sequelize
         if (email) {
-            const existingUser = await User.findOne({ 
-                email, 
-                _id: { $ne: req.user.id } 
+            const existingUser = await User.findOne({
+                where: {
+                    email,
+                    id: {
+                        [Op.ne]: req.user.id
+                    }
+                }
             });
             
             if (existingUser) {
@@ -273,16 +297,18 @@ export const updateProfile = async (req, res, next) => {
             }
         }
 
-        // Update user
-        const user = await User.findByIdAndUpdate(
-            req.user.id,
-            { username, email },
-            { new: true, runValidators: true }
-        ).select('-password');
+        // Update user - Modified for Sequelize
+        const user = await User.findByPk(req.user.id);
+        await user.update({ username, email });
+
+        // Get updated user without password
+        const updatedUser = await User.findByPk(req.user.id, {
+            attributes: { exclude: ['password'] }
+        });
 
         res.status(200).json({
             success: true,
-            data: user
+            data: updatedUser
         });
     } catch (error) {
         next(error);
@@ -306,10 +332,12 @@ export const refreshToken = async (req, res, next) => {
         // Verify refresh token
         const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
-        // Check if user exists and token matches
+        // Check if user exists and token matches - Modified for Sequelize
         const user = await User.findOne({
-            _id: decoded.id,
-            refreshToken
+            where: {
+                id: decoded.id,
+                refreshToken
+            }
         });
 
         if (!user) {
@@ -317,7 +345,7 @@ export const refreshToken = async (req, res, next) => {
         }
 
         // Generate new access token
-        const accessToken = generateAccessToken(user._id);
+        const accessToken = generateAccessToken(user.id);
 
         res.status(200).json({
             success: true,
@@ -346,8 +374,4 @@ const generateRefreshToken = (userId) => {
         process.env.JWT_REFRESH_SECRET,
         { expiresIn: process.env.JWT_REFRESH_EXPIRE }
     );
-};
-
-const generateResetToken = () => {
-    return crypto.randomBytes(20).toString('hex');
 };
