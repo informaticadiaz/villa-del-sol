@@ -1,6 +1,7 @@
 import { Payment, Owner, Apartment } from '../models';
 import { Op } from 'sequelize';
 import { createError } from '../utils/error.js';
+import { sequelize } from '../config/database.js';
 
 /**
  * Register a new payment
@@ -286,13 +287,4 @@ export const getPaymentHistory = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
-};
-
-// Export all controllers
-export {
-    registerPayment,
-    getAllPayments,
-    getPaymentStats,
-    getPendingPayments,
-    getPaymentHistory
 };
