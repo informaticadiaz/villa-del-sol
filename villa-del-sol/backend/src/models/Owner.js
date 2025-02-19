@@ -1,41 +1,118 @@
-// Owner.js
-import mongoose from 'mongoose';
+import { Model, DataTypes } from 'sequelize';
+import { sequelize } from '../utils/database.js';
 
-const ownerSchema = new mongoose.Schema({
+class Owner extends Model {}
+
+Owner.init({
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   name: {
-    type: String,
-    required: [true, 'El nombre es requerido'],
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      notNull: {
+        msg: 'El nombre es requerido'
+      },
+      notEmpty: {
+        msg: 'El nombre es requerido'
+      }
+    }
   },
   email: {
-    type: String,
-    required: [true, 'El email es requerido'],
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Email inválido']
+    validate: {
+      notNull: {
+        msg: 'El email es requerido'
+      },
+      isEmail: {
+        msg: 'Email inválido'
+      },
+      notEmpty: {
+        msg: 'El email es requerido'
+      }
+    },
+    set(value) {
+      this.setDataValue('email', value.toLowerCase());
+    }
   },
   phone: {
-    type: String,
-    required: [true, 'El teléfono es requerido'],
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      notNull: {
+        msg: 'El teléfono es requerido'
+      },
+      notEmpty: {
+        msg: 'El teléfono es requerido'
+      }
+    }
   },
   identification: {
-    type: String,
-    required: [true, 'La identificación es requerida'],
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    trim: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    validate: {
+      notNull: {
+        msg: 'La identificación es requerida'
+      },
+      notEmpty: {
+        msg: 'La identificación es requerida'
+      }
+    }
   },
   active: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   }
 }, {
-  timestamps: true
+  sequelize,
+  modelName: 'Owner',
+  tableName: 'owners',
+  timestamps: true,
+  // Configura los nombres de las columnas de timestamps
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  // Hooks para procesar datos antes de guardar
+  hooks: {
+    beforeCreate: (owner) => {
+      owner.email = owner.email.toLowerCase().trim();
+      owner.name = owner.name.trim();
+      owner.phone = owner.phone.trim();
+      owner.identification = owner.identification.trim();
+    },
+    beforeUpdate: (owner) => {
+      if (owner.changed('email')) {
+        owner.email = owner.email.toLowerCase().trim();
+      }
+      if (owner.changed('name')) {
+        owner.name = owner.name.trim();
+      }
+      if (owner.changed('phone')) {
+        owner.phone = owner.phone.trim();
+      }
+      if (owner.changed('identification')) {
+        owner.identification = owner.identification.trim();
+      }
+    }
+  }
 });
 
-export const Owner = mongoose.model('Owner', ownerSchema);
+// Definir las asociaciones
+Owner.associate = (models) => {
+  Owner.hasMany(models.Apartment, {
+    foreignKey: 'owner_id',
+    as: 'apartments'
+  });
+  
+  Owner.hasMany(models.Payment, {
+    foreignKey: 'owner_id',
+    as: 'payments'
+  });
+};
+
+export default Owner;
