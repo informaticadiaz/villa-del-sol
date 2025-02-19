@@ -1,3 +1,4 @@
+import { errorHandler } from './middleware/errorHandler.js';
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
@@ -5,15 +6,12 @@ import helmet from 'helmet';
 import mongoose from 'mongoose';
 
 // Importar rutas
-import ownerRoutes from './routes/ownerRoutes';
-import apartmentRoutes from './routes/apartmentRoutes';
-import visitorRoutes from './routes/visitorRoutes';
-import paymentRoutes from './routes/paymentRoutes';
-import reportRoutes from './routes/reportRoutes';
-import authRoutes from './routes/authRoutes';
-
-// Importar middleware
-import errorHandler from './middleware/errorHandler';
+import ownerRoutes from './routes/ownerRoutes.js';
+import apartmentRoutes from './routes/apartmentRoutes.js';
+import visitorRoutes from './routes/visitorRoutes.js';
+import paymentRoutes from './routes/paymentRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 
 dotenv.config();
 

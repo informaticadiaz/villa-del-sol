@@ -3,7 +3,7 @@ import * as reportController from '../controllers/reportController.js';
 import { auth } from '../middleware/auth.js';
 import { roleCheck } from '../middleware/roleCheck.js';
 import { validate } from '../middleware/validate.js';
-import { reportValidator } from '../utils/validators/reportValidator.js';
+import reportValidator from '../utils/validators/reportValidator.js';
 
 const router = Router();
 

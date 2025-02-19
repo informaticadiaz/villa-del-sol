@@ -3,7 +3,7 @@ import * as paymentController from '../controllers/paymentController.js';
 import { auth } from '../middleware/auth.js';
 import { roleCheck } from '../middleware/roleCheck.js';
 import { validate } from '../middleware/validate.js';
-import { paymentValidator } from '../utils/validators/paymentValidator.js';
+import paymentValidator from '../utils/validators/paymentValidator.js';
 
 const router = Router();
 

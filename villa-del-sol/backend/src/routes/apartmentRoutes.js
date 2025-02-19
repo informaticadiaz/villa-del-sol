@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { 
-  createApartment,
-  getApartments,
-  getApartmentById,
-  updateApartment,
-  deleteApartment,
-  getApartmentsByOwner,
-  updateApartmentStatus
+    createApartment,
+    getApartments,
+    getApartmentById,
+    updateApartment,
+    deleteApartment,
+    getApartmentsByOwner,
+    updateApartmentStatus
 } from '../controllers/apartmentController.js';
-import { validateApartment } from '../middleware/validate.js';
+import { validate } from '../middleware/validate.js';
+import { apartmentValidator } from '../utils/validators/apartmentValidator.js';
 import { auth } from '../middleware/auth.js';
 import { roleCheck } from '../middleware/roleCheck.js';
 
@@ -20,10 +21,10 @@ const router = Router();
  * @access  Private (Admin)
  */
 router.post('/', 
-  auth, 
-  roleCheck(['admin']), 
-  validateApartment, 
-  createApartment
+    auth, 
+    roleCheck(['admin']), 
+    validate(apartmentValidator.createApartment),
+    createApartment
 );
 
 /**
@@ -32,9 +33,9 @@ router.post('/',
  * @access  Private (Admin)
  */
 router.get('/', 
-  auth, 
-  roleCheck(['admin']), 
-  getApartments
+    auth, 
+    roleCheck(['admin']), 
+    getApartments
 );
 
 /**
@@ -43,9 +44,9 @@ router.get('/',
  * @access  Private (Admin, Owner of the apartment)
  */
 router.get('/:id', 
-  auth, 
-  roleCheck(['admin', 'owner']), 
-  getApartmentById
+    auth, 
+    roleCheck(['admin', 'owner']), 
+    getApartmentById
 );
 
 /**
@@ -54,10 +55,10 @@ router.get('/:id',
  * @access  Private (Admin)
  */
 router.put('/:id', 
-  auth, 
-  roleCheck(['admin']), 
-  validateApartment, 
-  updateApartment
+    auth, 
+    roleCheck(['admin']), 
+    validate(apartmentValidator.updateApartment),
+    updateApartment
 );
 
 /**
@@ -66,9 +67,9 @@ router.put('/:id',
  * @access  Private (Admin)
  */
 router.delete('/:id', 
-  auth, 
-  roleCheck(['admin']), 
-  deleteApartment
+    auth, 
+    roleCheck(['admin']), 
+    deleteApartment
 );
 
 /**
@@ -77,9 +78,9 @@ router.delete('/:id',
  * @access  Private (Admin, Owner)
  */
 router.get('/owner/:ownerId', 
-  auth, 
-  roleCheck(['admin', 'owner']), 
-  getApartmentsByOwner
+    auth, 
+    roleCheck(['admin', 'owner']), 
+    getApartmentsByOwner
 );
 
 /**
@@ -88,9 +89,10 @@ router.get('/owner/:ownerId',
  * @access  Private (Admin)
  */
 router.patch('/:id/status', 
-  auth, 
-  roleCheck(['admin']), 
-  updateApartmentStatus
+    auth, 
+    roleCheck(['admin']), 
+    validate(apartmentValidator.updateStatus),
+    updateApartmentStatus
 );
 
 export default router;

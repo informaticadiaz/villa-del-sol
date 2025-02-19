@@ -3,7 +3,7 @@ import * as visitorController from '../controllers/visitorController.js';
 import { auth } from '../middleware/auth.js';
 import { roleCheck } from '../middleware/roleCheck.js';
 import { validate } from '../middleware/validate.js';
-import { visitorValidator } from '../utils/validators/visitorValidator.js';
+import visitorValidator from '../utils/validators/visitorValidator.js';
 
 const router = Router();
 

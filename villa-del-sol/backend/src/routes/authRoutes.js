@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as authController from '../controllers/authController.js';
 import { validate } from '../middleware/validate.js';
 import { auth } from '../middleware/auth.js';
+import { roleCheck } from '../middleware/roleCheck.js';
 import { authValidator } from '../utils/validators/authValidator.js';
 
 const router = Router();
