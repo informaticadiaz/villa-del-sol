@@ -1,41 +1,93 @@
-// Visitor.js
-import mongoose from 'mongoose';
+import { Model, DataTypes } from 'sequelize';
+import { sequelize } from '../utils/database.js';
+import { Apartment } from './Apartment.js';
 
-const visitorSchema = new mongoose.Schema({
+class Visitor extends Model {}
+
+Visitor.init({
+  // ID se genera automáticamente como PRIMARY KEY
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  // Información básica del visitante
   name: {
-    type: String,
-    required: [true, 'El nombre es requerido'],
-    trim: true
+    type: DataTypes.STRING(100),
+    allowNull: false,
+    validate: {
+      notEmpty: { msg: 'El nombre es requerido' }
+    }
   },
   identification: {
-    type: String,
-    required: [true, 'La identificación es requerida'],
-    trim: true
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    validate: {
+      notEmpty: { msg: 'La identificación es requerida' }
+    }
   },
-  apartment: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Apartment',
-    required: [true, 'El apartamento es requerido']
+  // Referencia al apartamento (llave foránea)
+  apartmentId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: Apartment,
+      key: 'id'
+    },
+    field: 'apartment_id' // Nombre en snake_case para PostgreSQL
   },
+  // Campos temporales usando TIMESTAMP de PostgreSQL
   entryTime: {
-    type: Date,
-    required: [true, 'La hora de entrada es requerida'],
-    default: Date.now
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW,
+    field: 'entry_time'
   },
   exitTime: {
-    type: Date
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'exit_time'
   },
   reason: {
-    type: String,
-    required: [true, 'El motivo de la visita es requerido'],
-    trim: true
+    type: DataTypes.STRING(200),
+    allowNull: false,
+    validate: {
+      notEmpty: { msg: 'El motivo de la visita es requerido' }
+    }
   },
   vehicle: {
-    type: String,
-    trim: true
+    type: DataTypes.STRING(50),
+    allowNull: true
   }
 }, {
-  timestamps: true
+  sequelize,
+  modelName: 'Visitor',
+  tableName: 'visitors', // Nombre de tabla en plural y minúsculas
+  // Configuración de timestamps
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  // Índices para optimizar búsquedas frecuentes
+  indexes: [
+    {
+      name: 'idx_visitor_apartment',
+      fields: ['apartment_id']
+    },
+    {
+      name: 'idx_visitor_entry_time',
+      fields: ['entry_time']
+    },
+    {
+      name: 'idx_visitor_identification',
+      fields: ['identification']
+    }
+  ]
 });
 
-export const Visitor = mongoose.model('Visitor', visitorSchema);
+// Definición de relaciones
+Visitor.belongsTo(Apartment, {
+  foreignKey: 'apartmentId',
+  as: 'apartment'
+});
+
+export default Visitor;
