@@ -1,8 +1,6 @@
-import { Owner } from '../models/Owner.js';
-import { Apartment } from '../models/Apartment.js';
-import { Payment } from '../models/Payment.js';
-import { Visitor } from '../models/Visitor.js';
+import { Owner, Apartment, Payment, Visitor } from '../models/index.js';
 import { createError } from '../utils/error.js';
+import { sequelize } from '../utils/database.js';
 
 /**
  * Get all owners
@@ -12,9 +10,10 @@ import { createError } from '../utils/error.js';
  */
 export const getAllOwners = async (req, res, next) => {
     try {
-        const owners = await Owner.find()
-            .select('-password')
-            .sort({ name: 1 });
+        const owners = await Owner.findAll({
+            attributes: { exclude: ['password'] },
+            order: [['name', 'ASC']]
+        });
 
         res.status(200).json({
             success: true,
@@ -39,8 +38,9 @@ export const getOwnerById = async (req, res, next) => {
             return next(createError(403, 'No autorizado para ver esta información'));
         }
 
-        const owner = await Owner.findById(req.params.id)
-            .select('-password');
+        const owner = await Owner.findByPk(req.params.id, {
+            attributes: { exclude: ['password'] }
+        });
 
         if (!owner) {
             return next(createError(404, 'Propietario no encontrado'));
@@ -62,26 +62,36 @@ export const getOwnerById = async (req, res, next) => {
  * @param {NextFunction} next 
  */
 export const createOwner = async (req, res, next) => {
+    const transaction = await sequelize.transaction();
+    
     try {
         const { email } = req.body;
 
         // Check if owner already exists
-        const existingOwner = await Owner.findOne({ email });
+        const existingOwner = await Owner.findOne({ 
+            where: { email },
+            transaction
+        });
+
         if (existingOwner) {
+            await transaction.rollback();
             return next(createError(400, 'Ya existe un propietario con ese email'));
         }
 
-        const newOwner = new Owner(req.body);
-        const savedOwner = await newOwner.save();
+        const newOwner = await Owner.create(req.body, { transaction });
+
+        await transaction.commit();
 
         // Remove password from response
-        savedOwner.password = undefined;
+        const ownerResponse = newOwner.toJSON();
+        delete ownerResponse.password;
 
         res.status(201).json({
             success: true,
-            data: savedOwner
+            data: ownerResponse
         });
     } catch (error) {
+        await transaction.rollback();
         next(error);
     }
 };
@@ -93,39 +103,55 @@ export const createOwner = async (req, res, next) => {
  * @param {NextFunction} next 
  */
 export const updateOwner = async (req, res, next) => {
+    const transaction = await sequelize.transaction();
+    
     try {
         // Verify if user is owner and updating their own information
         if (req.user.role === 'owner' && req.params.id !== req.user.id) {
+            await transaction.rollback();
             return next(createError(403, 'No autorizado para actualizar esta información'));
         }
 
         // Check if email is being updated and is already taken
         if (req.body.email) {
             const existingOwner = await Owner.findOne({
-                email: req.body.email,
-                _id: { $ne: req.params.id }
+                where: {
+                    email: req.body.email,
+                    id: { [Op.ne]: req.params.id }
+                },
+                transaction
             });
 
             if (existingOwner) {
+                await transaction.rollback();
                 return next(createError(400, 'El email ya está en uso'));
             }
         }
 
-        const owner = await Owner.findByIdAndUpdate(
-            req.params.id,
-            { $set: req.body },
-            { new: true, runValidators: true }
-        ).select('-password');
+        const [updatedRows] = await Owner.update(req.body, {
+            where: { id: req.params.id },
+            returning: true,
+            transaction
+        });
 
-        if (!owner) {
+        if (updatedRows === 0) {
+            await transaction.rollback();
             return next(createError(404, 'Propietario no encontrado'));
         }
 
+        const updatedOwner = await Owner.findByPk(req.params.id, {
+            attributes: { exclude: ['password'] },
+            transaction
+        });
+
+        await transaction.commit();
+
         res.status(200).json({
             success: true,
-            data: owner
+            data: updatedOwner
         });
     } catch (error) {
+        await transaction.rollback();
         next(error);
     }
 };
@@ -137,24 +163,38 @@ export const updateOwner = async (req, res, next) => {
  * @param {NextFunction} next 
  */
 export const deleteOwner = async (req, res, next) => {
+    const transaction = await sequelize.transaction();
+    
     try {
         // Check if owner has any apartments
-        const hasApartments = await Apartment.exists({ owner: req.params.id });
-        if (hasApartments) {
+        const hasApartments = await Apartment.count({
+            where: { ownerId: req.params.id },
+            transaction
+        });
+
+        if (hasApartments > 0) {
+            await transaction.rollback();
             return next(createError(400, 'No se puede eliminar un propietario con apartamentos asignados'));
         }
 
-        const owner = await Owner.findByIdAndDelete(req.params.id);
+        const deletedRows = await Owner.destroy({
+            where: { id: req.params.id },
+            transaction
+        });
 
-        if (!owner) {
+        if (deletedRows === 0) {
+            await transaction.rollback();
             return next(createError(404, 'Propietario no encontrado'));
         }
+
+        await transaction.commit();
 
         res.status(200).json({
             success: true,
             message: 'Propietario eliminado exitosamente'
         });
     } catch (error) {
+        await transaction.rollback();
         next(error);
     }
 };
@@ -172,8 +212,10 @@ export const getOwnerApartments = async (req, res, next) => {
             return next(createError(403, 'No autorizado para ver estos apartamentos'));
         }
 
-        const apartments = await Apartment.find({ owner: req.params.id })
-            .sort({ number: 1 });
+        const apartments = await Apartment.findAll({
+            where: { ownerId: req.params.id },
+            order: [['number', 'ASC']]
+        });
 
         res.status(200).json({
             success: true,
@@ -198,8 +240,10 @@ export const getOwnerPayments = async (req, res, next) => {
             return next(createError(403, 'No autorizado para ver estos pagos'));
         }
 
-        const payments = await Payment.find({ owner: req.params.id })
-            .sort({ date: -1 });
+        const payments = await Payment.findAll({
+            where: { ownerId: req.params.id },
+            order: [['date', 'DESC']]
+        });
 
         res.status(200).json({
             success: true,
@@ -224,14 +268,23 @@ export const getOwnerVisitors = async (req, res, next) => {
             return next(createError(403, 'No autorizado para ver estos visitantes'));
         }
 
-        // Get owner's apartments
-        const apartments = await Apartment.find({ owner: req.params.id })
-            .select('_id');
+        // Get owner's apartments IDs
+        const apartments = await Apartment.findAll({
+            where: { ownerId: req.params.id },
+            attributes: ['id']
+        });
+
+        const apartmentIds = apartments.map(apt => apt.id);
 
         // Get visitors for all owner's apartments
-        const visitors = await Visitor.find({
-            apartment: { $in: apartments.map(apt => apt._id) }
-        }).sort({ entryTime: -1 });
+        const visitors = await Visitor.findAll({
+            where: {
+                apartmentId: {
+                    [Op.in]: apartmentIds
+                }
+            },
+            order: [['entryTime', 'DESC']]
+        });
 
         res.status(200).json({
             success: true,
