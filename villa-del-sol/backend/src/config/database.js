@@ -7,43 +7,43 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Configuración base de Sequelize
 const config = {
   dialect: 'postgres',
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  username: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  host: process.env.PGHOST,
+  port: process.env.PGPORT,
+  database: process.env.PGDATABASE,
+  username: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
   
   // Configuración del pool de conexiones
   pool: {
-    max: 5, // máximo de conexiones en el pool
-    min: 0, // mínimo de conexiones en el pool
-    acquire: 30000, // tiempo máximo, en milisegundos, para obtener una conexión antes de lanzar un error
-    idle: 10000 // tiempo máximo, en milisegundos, que una conexión puede estar inactiva antes de ser liberada
+    max: 5,
+    min: 0,
+    acquire: 30000,
+    idle: 10000
   },
 
-  // Configuración SSL para producción
-  dialectOptions: isProduction ? {
+  // Railway siempre requiere SSL
+  dialectOptions: {
     ssl: {
       require: true,
-      rejectUnauthorized: false // Necesario para Railway
+      rejectUnauthorized: false
     }
-  } : {},
+  },
 
   // Opciones adicionales
-  logging: isProduction ? false : console.log, // Desactivar logging en producción
-  timezone: '-05:00', // Zona horaria para Colombia
+  logging: isProduction ? false : console.log,
+  timezone: '-05:00',
   define: {
-    timestamps: true, // Habilitar timestamps automáticos (createdAt, updatedAt)
-    underscored: true, // Usar snake_case en lugar de camelCase para nombres de columnas
-    freezeTableName: true // Evitar que Sequelize modifique los nombres de las tablas
+    timestamps: true,
+    underscored: true,
+    freezeTableName: true
   }
 };
 
 // Crear instancia de Sequelize
 let sequelize;
 
-if (isProduction && process.env.DATABASE_URL) {
-  // Usar URL de conexión en producción (Railway proporciona DATABASE_URL)
+// Siempre usar DATABASE_URL si está disponible
+if (process.env.DATABASE_URL) {
   sequelize = new Sequelize(process.env.DATABASE_URL, {
     ...config,
     dialectOptions: {
@@ -54,21 +54,13 @@ if (isProduction && process.env.DATABASE_URL) {
     }
   });
 } else {
-  // Usar configuración local en desarrollo
+  // Configuración fallback usando parámetros individuales
   sequelize = new Sequelize(config);
 }
 
-// Función para probar la conexión
+// Función mejorada para probar la conexión
 export const testConnection = async () => {
   try {
     await sequelize.authenticate();
-    console.log('Conexión a la base de datos establecida correctamente.');
-    return true;
-  } catch (error) {
-    console.error('Error al conectar a la base de datos:', error);
-    return false;
-  }
-};
-
-// Exportar la instancia de Sequelize
-export default sequelize;
+    console.log('✅ Conexión a la base de datos establecida correctamente.');
+    console.log(`📊 Base de datos: ${process.env.PGDATABASE}

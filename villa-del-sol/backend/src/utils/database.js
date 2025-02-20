@@ -3,31 +3,29 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Obtener variables de entorno
+// Obtener variables de entorno de Railway
 const {
-    DB_HOST,
-    DB_PORT,
-    DB_NAME,
-    DB_USER,
-    DB_PASSWORD,
+    PGHOST,
+    PGPORT,
+    PGDATABASE,
+    PGUSER,
+    PGPASSWORD,
+    DATABASE_URL,
     NODE_ENV
 } = process.env;
 
-// Crear instancia de Sequelize
-const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
-    host: DB_HOST,
-    port: DB_PORT,
+// Crear instancia de Sequelize usando DATABASE_URL
+const sequelize = new Sequelize(DATABASE_URL, {
     dialect: 'postgres',
     logging: NODE_ENV === 'development' ? 
         (msg) => console.log(`[DATABASE] ${msg}`) : 
         false,
-    ssl: NODE_ENV === 'production',
     dialectOptions: {
-        ssl: NODE_ENV === 'production' ? {
+        ssl: {
             require: true,
             rejectUnauthorized: false
-        } : false,
-        connectTimeout: 10000 // 10 segundos para timeout de conexión
+        },
+        connectTimeout: 10000
     },
     pool: {
         max: 5,
@@ -36,7 +34,7 @@ const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
         idle: 10000
     },
     retry: {
-        max: 3, // Número máximo de intentos de reconexión
+        max: 3,
         match: [
             /SequelizeConnectionError/,
             /SequelizeConnectionRefusedError/,
@@ -45,8 +43,8 @@ const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
             /SequelizeInvalidConnectionError/,
             /SequelizeConnectionTimedOutError/
         ],
-        backoffBase: 1000, // Delay inicial entre intentos (1 segundo)
-        backoffExponent: 1.5 // Factor de incremento para el delay entre intentos
+        backoffBase: 1000,
+        backoffExponent: 1.5
     }
 });
 
@@ -60,9 +58,9 @@ const testConnection = async () => {
         const poolInfo = await sequelize.connectionManager.getConnection();
         console.log('[DATABASE] Pool de conexiones inicializado.');
         console.log(`[DATABASE] Dialect: ${sequelize.getDialect()}`);
-        console.log(`[DATABASE] Database: ${DB_NAME}`);
-        console.log(`[DATABASE] Host: ${DB_HOST}`);
-        console.log(`[DATABASE] Port: ${DB_PORT}`);
+        console.log(`[DATABASE] Database: ${PGDATABASE}`);
+        console.log(`[DATABASE] Host: ${PGHOST}`);
+        console.log(`[DATABASE] Port: ${PGPORT}`);
         
         await sequelize.connectionManager.releaseConnection(poolInfo);
     } catch (error) {
@@ -70,10 +68,11 @@ const testConnection = async () => {
         if (error.original) {
             console.error('[DATABASE] Error original:', error.original);
         }
-        // Si estamos en desarrollo, mostramos más detalles del error
         if (NODE_ENV === 'development') {
             console.error('[DATABASE] Stack trace:', error.stack);
         }
+        // Propagar el error para manejo superior
+        throw error;
     }
 };
 
