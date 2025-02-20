@@ -1,6 +1,6 @@
 import { Owner, Apartment, Payment, Visitor } from '../models/index.js';
 import { createError } from '../utils/error.js';
-import sequelize from '../utils/database.js';
+import sequelize from '../config/database.js';
 
 /**
  * Get all owners

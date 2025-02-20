@@ -1,81 +1,146 @@
-import { errorHandler } from './middleware/errorHandler.js';
-import dotenv from 'dotenv';
 import express from 'express';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
-import sequelize from './utils/database.js';
+import sequelize, { testConnection } from './config/database.js';
 
-// Importar rutas
-import ownerRoutes from './routes/ownerRoutes.js';
-import apartmentRoutes from './routes/apartmentRoutes.js';
-import visitorRoutes from './routes/visitorRoutes.js';
-import paymentRoutes from './routes/paymentRoutes.js';
-import reportRoutes from './routes/reportRoutes.js';
-import authRoutes from './routes/authRoutes.js';
+// Obtener la ruta del directorio actual
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-// Importar modelos para asegurar que se registren
-import './models/index.js';
+// Cargar variables de entorno de manera explícita
+const result = dotenv.config({ path: join(__dirname, '../.env') });
 
-dotenv.config();
+if (result.error) {
+  console.error('\n❌ Error al cargar el archivo .env:');
+  console.error(result.error);
+  process.exit(1);
+}
+
+// Función para verificar variables de entorno requeridas
+const checkRequiredEnvVars = () => {
+  const required = [
+    'DATABASE_URL',
+    'PGHOST',
+    'PGPORT',
+    'PGDATABASE',
+    'PGUSER',
+    'PGPASSWORD'
+  ];
+  
+  const missing = required.filter(var_ => !process.env[var_]);
+  
+  if (missing.length > 0) {
+    console.error('\n❌ Error: Variables de entorno faltantes:');
+    missing.forEach(var_ => {
+      console.error(`- ${var_} (${process.env[var_] === undefined ? 'undefined' : 'valor vacío'})`);
+    });
+    console.error('\nValores actuales:');
+    required.forEach(var_ => {
+      console.log(`${var_}: ${process.env[var_] || 'no definido'}`);
+    });
+    process.exit(1);
+  }
+};
+
+// Diagnóstico de variables de entorno
+const printEnvDiagnostics = () => {
+  console.log('\n🔍 Diagnóstico de variables de entorno:');
+  console.log('DATABASE_URL:', process.env.DATABASE_URL ? '✅ Definida' : '❌ No definida');
+  console.log('PGHOST:', process.env.PGHOST || '❌ No definido');
+  console.log('PGPORT:', process.env.PGPORT || '❌ No definido');
+  console.log('PGDATABASE:', process.env.PGDATABASE || '❌ No definido');
+  console.log('PGUSER:', process.env.PGUSER ? '✅ Definido' : '❌ No definido');
+  console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
+  console.log('\n');
+};
+
+// Verificar variables de entorno antes de continuar
+checkRequiredEnvVars();
+printEnvDiagnostics();
 
 const app = express();
 
-// Middleware básico
+// Middleware
 app.use(cors());
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rutas
-app.use('/api/owners', ownerRoutes);
-app.use('/api/apartments', apartmentRoutes);
-app.use('/api/visitors', visitorRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/auth', authRoutes);
-
-// Manejo de errores
-app.use(errorHandler);
-
-// Función para inicializar la base de datos
+// Inicializar base de datos
 const initializeDatabase = async () => {
   try {
-    // Verificar la conexión
-    await sequelize.authenticate();
-    console.log('Conexión a PostgreSQL establecida correctamente.');
-
-    // Sincronizar modelos con la base de datos
-    // En producción, usar { force: false }
-    await sequelize.sync({ alter: true });
-    console.log('Modelos sincronizados con la base de datos.');
+    console.log('🔌 Intentando conectar a la base de datos...');
+    await testConnection();
     
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔄 Iniciando sincronización de modelos...');
+      await sequelize.sync({ alter: true });
+      console.log('✅ Modelos sincronizados con la base de datos');
+    }
+    return true;
   } catch (error) {
-    console.error('Error al inicializar la base de datos:', error);
-    process.exit(1);
+    console.error('\n❌ Error al inicializar la base de datos:');
+    console.error('Tipo de error:', error.name);
+    console.error('Mensaje:', error.message);
+    if (error.original) {
+      console.error('\nError original:');
+      console.error('Código:', error.original.code);
+      console.error('Errno:', error.original.errno);
+      console.error('Syscall:', error.original.syscall);
+      console.error('Host:', error.original.address);
+      console.error('Puerto:', error.original.port);
+    }
+    return false;
   }
 };
 
-const startServer = async () => {
-  try {
-    // Inicializar la base de datos
-    await initializeDatabase();
-
-    const PORT = process.env.PORT || 3000;
-    
-    app.listen(PORT, () => {
-      console.log(`Servidor corriendo en el puerto ${PORT}`);
-    });
-  } catch (error) {
-    console.error('Error al iniciar el servidor:', error);
-    process.exit(1);
-  }
-};
-
-// Manejo de errores no capturados
-process.on('unhandledRejection', (err) => {
-  console.error('Error no manejado:', err);
-  // Cerrar el servidor y salir
-  process.exit(1);
+// Manejador de errores global
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err);
+  res.status(500).json({
+    success: false,
+    message: 'Error interno del servidor',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
+// Función para iniciar el servidor
+const startServer = async () => {
+  const dbInitialized = await initializeDatabase();
+  
+  if (!dbInitialized) {
+    console.error('❌ No se pudo inicializar la base de datos. Saliendo...');
+    process.exit(1);
+  }
+
+  const PORT = process.env.PORT || 3001;
+  
+  try {
+    const server = app.listen(PORT, () => {
+      console.log(`\n🚀 Servidor corriendo en el puerto ${PORT}`);
+      console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    });
+
+    // Manejar errores del servidor
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`❌ El puerto ${PORT} está en uso. Por favor, especifica otro puerto en la variable de entorno PORT.`);
+        process.exit(1);
+      } else {
+        console.error('❌ Error al iniciar el servidor:', error);
+        process.exit(1);
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error al iniciar el servidor:', error);
+    process.exit(1);
+  }
+};
+
+// Iniciar servidor
 startServer();
+
+export default app;

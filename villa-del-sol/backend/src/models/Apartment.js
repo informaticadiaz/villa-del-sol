@@ -1,5 +1,5 @@
 import { Model, DataTypes } from 'sequelize';
-import sequelize from '../utils/database.js';
+import sequelize from '../config/database.js';
 import Owner from './Owner.js';
 
 class Apartment extends Model {}
