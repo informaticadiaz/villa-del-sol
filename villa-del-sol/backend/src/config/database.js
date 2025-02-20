@@ -63,4 +63,18 @@ export const testConnection = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ Conexión a la base de datos establecida correctamente.');
-    console.log(`📊 Base de datos: ${process.env.PGDATABASE}
+    console.log(`📊 Base de datos: ${process.env.PGDATABASE}`);
+    console.log(`🌐 Host: ${process.env.PGHOST}`);
+    console.log(`🔌 Puerto: ${process.env.PGPORT}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error al conectar a la base de datos:', error);
+    if (error.original) {
+      console.error('Error original:', error.original);
+    }
+    return false;
+  }
+};
+
+// Exportar la instancia de Sequelize
+export default sequelize;
