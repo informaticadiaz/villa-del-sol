@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { sequelize } from './utils/database.js';
+import sequelize from './utils/database.js';
 
 // Importar rutas
 import ownerRoutes from './routes/ownerRoutes.js';
